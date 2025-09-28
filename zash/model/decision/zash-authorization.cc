@@ -7,12 +7,13 @@ AuthorizationComponent::AuthorizationComponent ()
 }
 AuthorizationComponent::AuthorizationComponent (ConfigurationComponent *c, OntologyComponent *o,
                                                 ContextComponent *ctx, ActivityComponent *a,
-                                                NotificationComponent *n, AuditComponent *adt)
+                                                ConflictComponent *conf, NotificationComponent *n, AuditComponent *adt)
 {
   configurationComponent = c;
   ontologyComponent = o;
   contextComponent = ctx;
   activityComponent = a;
+  conflictComponent = conf;
   notificationComponent = n;
   auditComponent = adt;
 }
@@ -70,6 +71,13 @@ AuthorizationComponent::authorizeRequest (Request *req,
 
   if (!denied && req->validated == 3)
     {
+      if (!conflictComponent->processRequest(req))
+        {
+          ++auditComponent->reqDenied;
+          *auditComponent->zashOutput << "CONFLICT DETECTED - Request is NOT authorized!" << endl;
+          return false;
+        }
+      
       ++auditComponent->reqGranted;
       *auditComponent->zashOutput << "Request is authorized!" << endl;
       return true;

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 version="3.36.1"
-root="/home/grosa/ns-allinone-3.36.1"
+root="/home/pedro/Desktop/ns-allinone-3.36.1"
 
 echo "Copying zash files..."
 cp -avr "zash" "${root}/ns-${version}/src"

@@ -3,6 +3,7 @@
 
 #include <ctime>
 #include <iostream>
+#include <map>
 
 using namespace std;
 
@@ -22,6 +23,7 @@ public:
   ConfigurationComponent *configurationComponent;
   AuditComponent *auditComponent;
   MarkovChain *markovChain = new MarkovChain ();
+  map<int, MarkovChain*> userMarkovChains;
   bool isMarkovBuilding = true;
   time_t limitDate = (time_t) (-1);
   ActivityComponent ();
@@ -32,6 +34,10 @@ public:
   // check if markov build time expired
   void checkBuilding (time_t currentDate);
   void resetMarkov (time_t currentDate);
+  
+  MarkovChain* getUserMarkovChain(int userId);
+  float getUserActivityProbability(Request *req);
+  void buildUserTransition(Request *req);
 };
 } // namespace ns3
 

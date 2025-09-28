@@ -74,11 +74,40 @@ ActivityComponent::checkBuilding (time_t currentDate)
 void
 ActivityComponent::resetMarkov (time_t currentDate)
 {
-  *auditComponent->zashOutput << "Markov Chain is reset at " << formatTime (currentDate) << endl;
+  *auditComponent->zashOutput << "Markov Chains are reset at " << formatTime (currentDate) << endl;
   delete markovChain;
   markovChain = new MarkovChain ();
+  
+  for (auto& pair : userMarkovChains) {
+    delete pair.second;
+    pair.second = new MarkovChain();
+  }
+  
   isMarkovBuilding = true;
   limitDate = currentDate + configurationComponent->buildInterval * 24 * 60 * 60; // add days
+}
+
+MarkovChain* ActivityComponent::getUserMarkovChain(int userId) {
+  if (userMarkovChains.find(userId) == userMarkovChains.end()) {
+    userMarkovChains[userId] = new MarkovChain();
+  }
+  return userMarkovChains[userId];
+}
+
+float ActivityComponent::getUserActivityProbability(Request *req) {
+  vector<int> lastState = dataComponent->lastState;
+  vector<int> currentState = dataComponent->currentState;
+  
+  MarkovChain* userMarkov = getUserMarkovChain(req->user->id);
+  return userMarkov->getProbability(currentState, lastState);
+}
+
+void ActivityComponent::buildUserTransition(Request *req) {
+  vector<int> lastState = dataComponent->lastState;
+  vector<int> currentState = dataComponent->currentState;
+  
+  MarkovChain* userMarkov = getUserMarkovChain(req->user->id);
+  userMarkov->buildTransition(currentState, lastState);
 }
 
 } // namespace ns3
