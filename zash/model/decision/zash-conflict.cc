@@ -97,21 +97,18 @@ bool ConflictComponent::processRequest(Request *req) {
     *auditComponent->zashOutput << "Conflict detected between AUTHORIZED users: " << *conflict << endl;
     logConflict(conflict);
     
-    // Resolver conflito
     bool resolved = resolveConflict(conflict);
     
     if (resolved && conflict->winner) {
         *auditComponent->zashOutput << "Conflict resolved. Winner: Request " << conflict->winner->id << endl;
         logConflictResolution(conflict, conflict->winner);
         
-        // Liberar dispositivo se necessário
         if (conflict->winner->action->key == "CONTROL" || conflict->winner->action->key == "MANAGE") {
             deviceInUse[conflict->winner->device->id] = conflict->winner;
         }
         
         updateUserPriority(conflict->winner->user->id, req->currentDate);
         
-        // Marcar conflito como resolvido
         conflict->resolved = true;
         
         return (req->id == conflict->winner->id);
@@ -141,8 +138,7 @@ bool ConflictComponent::resolveConflict(Conflict *conflict) {
   }
   
   Request *winner = nullptr;
-  
-  // Usar resolução multi-métrica para ambos os tipos de conflito
+
   winner = selectWinnerMultiMetric(conflict->requests);
   
   if (winner) {
@@ -153,7 +149,6 @@ bool ConflictComponent::resolveConflict(Conflict *conflict) {
   return false;
 }
 
-// Métodos para conflitos concorrentes
 bool ConflictComponent::isDeviceInUse(int deviceId) {
     return deviceInUse.find(deviceId) != deviceInUse.end();
 }
@@ -169,10 +164,6 @@ Request* ConflictComponent::findConcurrentConflict(Request *req) {
 Request* ConflictComponent::selectWinnerConcurrent(vector<Request*> requests) {
     if (requests.empty()) return nullptr;
     
-    // Critérios de seleção (em ordem de prioridade):
-    // 1. Prioridade do usuário
-    // 2. Tipo de ação (MANAGE > CONTROL > VIEW)
-    // 3. Timestamp (mais recente)
     
     Request *winner = requests[0];
     int maxPriority = getUserPriority(winner->user->id);
@@ -205,14 +196,13 @@ Request* ConflictComponent::selectWinnerConcurrent(vector<Request*> requests) {
     return winner;
 }
 
-// Métodos para conflitos paralelos
 bool ConflictComponent::hasDeviceInterference(int deviceId1, int deviceId2) {
     if (deviceId1 == deviceId2) return false;
     
     for (DeviceInterference *interference : deviceInterferences) {
         if ((interference->deviceId1 == deviceId1 && interference->deviceId2 == deviceId2) ||
             (interference->deviceId1 == deviceId2 && interference->deviceId2 == deviceId1)) {
-            return interference->interferenceLevel > 0.5;  // Threshold de interferência
+            return interference->interferenceLevel > 0.5;  
         }
     }
     
@@ -237,12 +227,9 @@ vector<Request*> ConflictComponent::findParallelConflicts(Request *req) {
 Request* ConflictComponent::selectWinnerParallel(vector<Request*> requests) {
     if (requests.empty()) return nullptr;
     
-    // Para conflitos paralelos, usar critérios similares aos concorrentes
-    // mas considerar também o nível de interferência
     return selectWinnerConcurrent(requests);
 }
 
-// Métodos de prioridade
 void ConflictComponent::updateUserPriority(int userId, time_t currentTime) {
     auto it = userPriorities.find(userId);
     if (it != userPriorities.end()) {
@@ -255,7 +242,7 @@ int ConflictComponent::getUserPriority(int userId) {
     if (it != userPriorities.end()) {
         return it->second->priority;
     }
-    return 0;  // Prioridade padrão
+    return 0; 
 }
 
 void ConflictComponent::cleanupExpiredConflicts(time_t currentTime) {
@@ -278,7 +265,6 @@ void ConflictComponent::releaseDevice(int deviceId) {
     deviceInUse.erase(deviceId);
 }
 
-// Métodos de configuração
 void ConflictComponent::addDeviceInterference(int deviceId1, int deviceId2, float level) {
     deviceInterferences.push_back(new DeviceInterference(deviceId1, deviceId2, level));
 }
@@ -292,7 +278,6 @@ void ConflictComponent::setUserPriority(int userId, int priority) {
     }
 }
 
-// Métodos de auditoria
 void ConflictComponent::logConflict(Conflict *conflict) {
     *auditComponent->zashOutput << "CONFLICT LOG: " << *conflict << endl;
     for (Request *req : conflict->requests) {
@@ -306,25 +291,18 @@ void ConflictComponent::logConflictResolution(Conflict *conflict, Request *winne
                              << " resolved. Winner: Request " << winner->id 
                              << " (User " << winner->user->id << ")" << endl;
 }
-
-// Implementação dos métodos para resolução multi-métrica (inspirada em KRATOS)
 MultiMetricScore ConflictComponent::calculateMultiMetricScore(Request *req) {
   MultiMetricScore score(req->user->id);
   
-  // Ontologia já foi verificada antes - não precisa calcular
-  score.ontologyScore = 1.0;  // Usuário já foi autorizado
+  score.ontologyScore = 1.0;
   
-  // Calcular pontuação de confiança
   score.trustScore = calculateTrustScore(req);
   
-  // Calcular pontuação de atividade
   score.activityScore = calculateActivityScore(req);
   
-  // Calcular pontuação de contexto
   score.contextScore = calculateContextScore(req);
   
-  // Calcular pontuação final ponderada (sem ontologia)
-  score.calculateFinalScore(0.0, 0.3, 0.4, 0.3);  // Confiança(30%) + Atividade(40%) + Contexto(30%)
+  score.calculateFinalScore(0.0, 0.3, 0.4, 0.3);
   
   *auditComponent->zashOutput << "Multi-Metric Score: " << score << endl;
   
@@ -354,27 +332,23 @@ Request* ConflictComponent::selectWinnerMultiMetric(vector<Request*> requests) {
 }
 
 float ConflictComponent::calculateOntologyScore(Request *req) {
-  // Ontologia já foi verificada antes - usuário já foi autorizado
-  // Retorna pontuação baseada no nível do usuário e tipo de ação
-  float userLevelScore = (float)req->user->userLevel->weight / 100.0;  // Normalizar para 0-1
-  float actionScore = (float)req->action->weight / 100.0;  // Normalizar para 0-1
+  float userLevelScore = (float)req->user->userLevel->weight / 100.0; 
+  float actionScore = (float)req->action->weight / 100.0;
   
-  return (userLevelScore + actionScore) / 2.0;  // Média ponderada
+  return (userLevelScore + actionScore) / 2.0;
 }
 
 float ConflictComponent::calculateTrustScore(Request *req) {
-  // Calcular confiança baseada no contexto
+
   int trustLevel = contextComponent->calculateTrust(req->context, req->user);
   
-  // Normalizar para 0-1 (assumindo que trustLevel vai de 0 a 100)
   return (float)trustLevel / 100.0;
 }
 
 float ConflictComponent::calculateActivityScore(Request *req) {
-  // Calcular probabilidade de atividade do usuário
+
   float activityProb = activityComponent->getUserActivityProbability(req);
-  
-  // Se ainda está construindo a cadeia, usar pontuação baseada no userLevel
+
   if (activityComponent->isMarkovBuilding) {
     return (float)req->user->userLevel->weight / 100.0;
   }
@@ -383,13 +357,11 @@ float ConflictComponent::calculateActivityScore(Request *req) {
 }
 
 float ConflictComponent::calculateContextScore(Request *req) {
-  // Calcular pontuação baseada no contexto da requisição
   float accessWayScore = (float)req->context->accessWay->weight / 100.0;
   float localizationScore = (float)req->context->localization->weight / 100.0;
   float timeScore = (float)req->context->time->weight / 100.0;
   float groupScore = (float)req->context->group->weight / 100.0;
   
-  // Média ponderada dos fatores de contexto
   return (accessWayScore + localizationScore + timeScore + groupScore) / 4.0;
 }
 
