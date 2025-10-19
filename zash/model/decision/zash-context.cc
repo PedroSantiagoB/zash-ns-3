@@ -49,9 +49,9 @@ ContextComponent::ContextComponent (ConfigurationComponent *c, AuditComponent *a
           for (const pair<string, enums::Enum *> act : configurationComponent->props->Action)
             {
               timeProbs.push_back (new TimeObject (device, ul.second, act.second));
-            }
-        }
+      }
     }
+  }
 }
 
 // static trust calculation based on expected
@@ -68,27 +68,31 @@ ContextComponent::verifyContext (Request *req,
   checkBuilding (req->currentDate);
   if (isTimeBuilding)
     {
-      *auditComponent->zashOutput << "Time probability is still building" << endl;
+    *auditComponent->zashOutput << "Time probability is still building" << endl;
       req->context->time = configurationComponent->props->TimeClass.at ("UNCOMMON");
-    }
+  }
   *auditComponent->zashOutput << "Verify context " << *req->context << " with " << *req->user
                               << " at " << formatTime (req->currentDate) << endl;
   int expectedDevice = req->device->deviceClass->weight + req->action->weight;
   int expectedUser = req->user->userLevel->weight + req->action->weight;
   int expected = min (max (expectedDevice, expectedUser), 100);
   int calculated = min (calculateTrust (req->context, req->user), 100);
-  *auditComponent->zashOutput << "Trust level is " << calculated << " and expected is " << expected
-                              << endl;
+
+  // Armazenar valor calculado para reutilização no ConflictComponent
+  req->calculatedTrust = calculated;
+
+  *auditComponent->zashOutput << "Trust level is " << calculated
+                              << " and expected is " << expected << endl;
   if (calculated < expected)
+  {
+    auditComponent->contextFail.push_back (new AuditEvent (req));
+    *auditComponent->zashOutput << "Trust level is BELOW expected! Requires proof of identity!"
+    << endl;
+    if (!explicitAuthentication (req))
     {
-      auditComponent->contextFail.push_back (new AuditEvent (req));
-      *auditComponent->zashOutput << "Trust level is BELOW expected! Requires proof of identity!"
-                                  << endl;
-      if (!explicitAuthentication (req))
-        {
-          return false;
-        }
+      return false;
     }
+  }
   *auditComponent->zashOutput << "Trust level is ABOVE expected!" << endl;
   return true;
 }
@@ -100,15 +104,15 @@ ContextComponent::checkBuilding (time_t currentDate)
   if (difftime (limitDate, (time_t) (-1)) == 0)
     {
       limitDate = currentDate + configurationComponent->buildInterval * 24 * 60 * 60; // add days
-      configurationComponent->isBuilding = true;
+    configurationComponent->isBuilding = true;
     }
   else if (isTimeBuilding && difftime (currentDate, limitDate) > 0)
     {
-      isTimeBuilding = false;
-      configurationComponent->isBuilding = false;
+    isTimeBuilding = false;
+    configurationComponent->isBuilding = false;
       *auditComponent->zashOutput << "Time context stopped building probabilities at "
                                   << formatTime (currentDate) << endl;
-    }
+  }
 }
 
 int
@@ -125,27 +129,27 @@ ContextComponent::calculateTime (Request *req, time_t currentDate)
   int hour = extractHour (currentDate);
   if (hour >= 6 && hour < 12)
     {
-      time = enums::MORNING;
+    time = enums::MORNING;
     }
   else if (hour >= 12 && hour < 18)
     {
-      time = enums::AFTERNOON;
+    time = enums::AFTERNOON;
     }
   else if ((hour >= 18 && hour <= 23) || (hour >= 0 && hour < 6))
     {
-      time = enums::NIGHT;
-    }
+    time = enums::NIGHT;
+  }
 
   auto it = find_if (timeProbs.begin (), timeProbs.end (), compareTObj (req));
   if (it != timeProbs.end ())
     {
-      TimeObject *timeObj = it[0];
+    TimeObject *timeObj = it[0];
       recalculateProbabilities (timeObj, time);
 
       auto it2 = find_if (timeObj->times.begin (), timeObj->times.end (), compareTimes (time));
       if (it2 != timeObj->times.end ())
         {
-          TimePercentage *timePct = it2[0];
+      TimePercentage *timePct = it2[0];
           if (timePct->percentage < 0.3)
             {
               req->context->time = configurationComponent->props->TimeClass.at ("UNCOMMON");
@@ -153,9 +157,9 @@ ContextComponent::calculateTime (Request *req, time_t currentDate)
           else
             {
               req->context->time = configurationComponent->props->TimeClass.at ("COMMON");
-            }
-        }
+      }
     }
+  }
 }
 
 void
@@ -168,10 +172,10 @@ ContextComponent::recalculateProbabilities (TimeObject *timeObj, int time)
     {
       if (timePct->time == time)
         {
-          ++timePct->occurrences;
-        }
-      timePct->percentage = (float) timePct->occurrences / timeObj->totalOcc;
+      ++timePct->occurrences;
     }
+      timePct->percentage = (float) timePct->occurrences / timeObj->totalOcc;
+  }
 }
 
 } // namespace ns3

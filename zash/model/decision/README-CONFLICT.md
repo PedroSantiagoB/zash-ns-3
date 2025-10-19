@@ -2,18 +2,22 @@
 
 ## Visão Geral
 
-O módulo `zash-conflict` é uma extensão do sistema ZASH que lida com conflitos entre usuários em casas inteligentes. Ele detecta e resolve dois tipos principais de conflitos usando uma abordagem **multi-métrica inspirada em KRATOS**:
+O módulo `zash-conflict` é uma extensão do sistema ZASH que lida com conflitos entre usuários em casas inteligentes. Ele detecta e resolve conflitos concorrentes usando uma abordagem **multi-métrica inspirada em KRATOS**:
 
 1. **Conflitos Concorrentes**: Múltiplos usuários tentando interagir com o mesmo dispositivo simultaneamente
-2. **Conflitos Paralelos**: Usuários interagindo com dispositivos diferentes que interferem entre si
 
-## Abordagem Multi-Métrica
+## Abordagem Hierárquica Simplificada
 
-O sistema utiliza **3 métricas principais** para resolução de conflitos (após filtro de ontologia):
+O sistema utiliza uma **abordagem hierárquica simplificada** para resolução de conflitos:
 
-1. **Confiança** (30%): Calcula nível de confiança baseado no contexto
-2. **Atividade** (40%): Analisa padrões de comportamento do usuário (cadeia de Markov)
-3. **Contexto** (30%): Considera fatores situacionais (localização, tempo, etc.)
+1. **Hierarquia por User-Level**: Usuários com nível mais alto ganham automaticamente
+2. **Score Simplificado**: Apenas para empates no mesmo nível (Confiança × Atividade)
+
+**Lógica de Resolução:**
+- **Admin vs Adulto**: Admin ganha automaticamente
+- **Adulto vs Criança**: Adulto ganha automaticamente  
+- **Adulto vs Adulto**: Usa score (Confiança × Atividade)
+- **Criança vs Criança**: Usa score (Confiança × Atividade)
 
 **Nota**: A ontologia atua como **filtro** (não como peso), garantindo que apenas usuários com permissão participem da resolução de conflitos.
 
@@ -23,7 +27,6 @@ O sistema utiliza **3 métricas principais** para resolução de conflitos (apó
 
 - **ConflictComponent**: Componente principal que gerencia conflitos
 - **Conflict**: Estrutura que representa um conflito específico
-- **DeviceInterference**: Define interferências entre dispositivos
 - **UserPriority**: Gerencia prioridades dos usuários
 - **MultiMetricScore**: Calcula pontuação multi-métrica para resolução de conflitos
 
@@ -43,51 +46,38 @@ Requisição → Ontologia → Contexto → Atividade → Conflito → Autoriza�
 
 ## Tipos de Conflitos
 
-### 1. Conflitos Concorrentes
+### Conflitos Concorrentes
 
-**Definição**: Dois ou mais usuários tentam interagir com o mesmo dispositivo ao mesmo tempo.
+**Definição**: Dois ou mais usuários tentam interagir com o mesmo dispositivo dentro de um período de tempo configurável por dispositivo.
 
-**Exemplo**:
+**Lógica de Timeout:**
+Cada dispositivo tem seu próprio timeout baseado em suas características:
+- **Dispositivos Rápidos** (Luz): 5-10s (ações instantâneas)
+- **Dispositivos Moderados** (TV): 10-30s (ações rápidas)
+- **Dispositivos Lentos** (AC): 300-600s (ações demoradas)
+- **Dispositivos Críticos** (Segurança): 60-300s (ações importantes)
+
+**Exemplo com TV (timeout=10s)**:
 ```
-Usuário A: Liga TV
-Usuário B: Desliga TV (simultaneamente)
+Usuário A: Liga TV (t=0s) → Autorizado, timestamp registrado
+Usuário B: Desliga TV (t=5s) → Conflito! (5s < 10s timeout)
+Usuário C: Liga TV (t=15s) → Sem conflito (15s > 10s timeout)
+```
+
+**Exemplo com AC (timeout=600s)**:
+```
+Usuário A: Liga AC (t=0s) → Autorizado, timestamp registrado
+Usuário B: Desliga AC (t=300s) → Conflito! (300s < 600s timeout)
+Usuário C: Liga AC (t=700s) → Sem conflito (700s > 600s timeout)
 ```
 
 **Resolução**: Baseada em:
-- Prioridade do usuário
-- Tipo de ação (MANAGE > CONTROL > VIEW)
-- Timestamp da requisição
-
-### 2. Conflitos Paralelos
-
-**Definição**: Usuários interagindo com dispositivos diferentes que interferem entre si.
-
-**Exemplo**:
-```
-Usuário A: Liga ar condicionado
-Usuário B: Liga aquecedor (interferência total)
-```
-
-**Resolução**: Baseada em:
-- Nível de interferência entre dispositivos
-- Prioridade dos usuários
-- Compatibilidade das ações
+1. **Hierarquia**: User-level mais alto ganha automaticamente
+2. **Score**: Para mesmo user-level, usa Confiança × Atividade
 
 ## Configuração
 
-### 1. Interferências entre Dispositivos
-
-```cpp
-// Configurar interferência entre dispositivos
-conflictComponent->addDeviceInterference(deviceId1, deviceId2, interferenceLevel);
-
-// Exemplos:
-conflictComponent->addDeviceInterference(1, 2, 1.0);  // Interferência total
-conflictComponent->addDeviceInterference(3, 4, 0.5);  // Interferência média
-conflictComponent->addDeviceInterference(5, 6, 0.2);  // Interferência baixa
-```
-
-### 2. Prioridades dos Usuários
+### 1. Prioridades dos Usuários
 
 ```cpp
 // Configurar prioridade de usuário
@@ -99,55 +89,71 @@ conflictComponent->setUserPriority(2, 80);   // Adulto
 conflictComponent->setUserPriority(3, 40);   // Criança
 ```
 
-### 3. Parâmetros do Sistema
+### 2. Parâmetros do Sistema
 
 ```cpp
-// Configurar timeout de conflitos
+// Configurar timeout geral de conflitos
 conflictComponent->conflictTimeout = 30;  // 30 segundos
 
-// Configurar máximo de requisições concorrentes
-conflictComponent->maxConcurrentRequests = 5;
+// Configurar timeout específico por dispositivo
+devices[0]->conflictTimeout = 10;   // TV: 10 segundos
+devices[1]->conflictTimeout = 600;  // Ar Condicionado: 600 segundos (10 minutos)
+devices[2]->conflictTimeout = 300;  // Sistema de Segurança: 300 segundos (5 minutos)
+devices[3]->conflictTimeout = 5;    // Luz: 5 segundos
 ```
 
-## Algoritmos de Resolução Multi-Métrica
+**Parâmetros de Timeout:**
+- `conflictTimeout`: Timeout geral para resolução de conflitos (30s)
+- `device->conflictTimeout`: Timeout específico de cada dispositivo (padrão 10s)
 
-### 1. Cálculo de Pontuação Multi-Métrica
+**Exemplos de Timeout por Tipo de Dispositivo:**
+- **Dispositivos Rápidos** (Luz, Cortina): 5-10 segundos
+- **Dispositivos Moderados** (TV, Som): 10-30 segundos  
+- **Dispositivos Lentos** (AC, Aquecedor): 300-600 segundos
+- **Dispositivos Críticos** (Segurança, Portas): 60-300 segundos
 
-```cpp
-MultiMetricScore calculateMultiMetricScore(Request *req) {
-    MultiMetricScore score(req->user->id);
-    
-    // Ontologia (30%): Verifica permissões
-    score.ontologyScore = calculateOntologyScore(req);
-    
-    // Confiança (30%): Nível de confiança baseado no contexto
-    score.trustScore = calculateTrustScore(req);
-    
-    // Atividade (20%): Padrões de comportamento do usuário
-    score.activityScore = calculateActivityScore(req);
-    
-    // Contexto (20%): Fatores situacionais
-    score.contextScore = calculateContextScore(req);
-    
-    // Pontuação final ponderada
-    score.calculateFinalScore(0.3, 0.3, 0.2, 0.2);
-    
-    return score;
-}
-```
+## Algoritmos de Resolução Hierárquica
 
-### 2. Seleção de Vencedor Multi-Métrica
+### 1. Lógica de Resolução de Conflitos
 
 ```cpp
 Request* selectWinnerMultiMetric(vector<Request*> requests) {
+    // 1. Verificar hierarquia por user-level
+    Request *highestLevelReq = nullptr;
+    int maxUserLevel = -1;
+    
+    for (Request *req : requests) {
+        int userLevel = req->user->userLevel->weight;
+        if (userLevel > maxUserLevel) {
+            maxUserLevel = userLevel;
+            highestLevelReq = req;
+        }
+    }
+    
+    // 2. Verificar se há empate no nível mais alto
+    vector<Request*> sameLevelRequests;
+    for (Request *req : requests) {
+        if (req->user->userLevel->weight == maxUserLevel) {
+            sameLevelRequests.push_back(req);
+        }
+    }
+    
+    if (sameLevelRequests.size() == 1) {
+        // Apenas um usuário com nível mais alto - ganha automaticamente
+        return highestLevelReq;
+    }
+    
+    // 3. Empate no nível mais alto - usar score (Confiança × Atividade)
     Request *winner = nullptr;
     float maxScore = -1.0;
     
-    for (Request *req : requests) {
-        MultiMetricScore score = calculateMultiMetricScore(req);
+    for (Request *req : sameLevelRequests) {
+        float trustScore = calculateTrustScore(req);
+        float activityScore = calculateActivityScore(req);
+        float finalScore = trustScore * activityScore;
         
-        if (score.finalScore > maxScore) {
-            maxScore = score.finalScore;
+        if (finalScore > maxScore) {
+            maxScore = finalScore;
             winner = req;
         }
     }
@@ -156,22 +162,22 @@ Request* selectWinnerMultiMetric(vector<Request*> requests) {
 }
 ```
 
-### 3. Métricas Individuais
+### 2. Cálculo de Score Simplificado
 
-#### Ontologia Score
 ```cpp
-float calculateOntologyScore(Request *req) {
-    // Verifica se ontologia permite a ação
-    bool valid = ontologyComponent->verifyOntology(req);
-    if (!valid) return 0.0;
+float calculateSimplifiedScore(Request *req) {
+    // Confiança do contexto
+    float trustScore = contextComponent->calculateTrust(req->context, req->user) / 100.0;
     
-    // Combina nível do usuário e tipo de ação
-    float userScore = req->user->userLevel->weight / 100.0;
-    float actionScore = req->action->weight / 100.0;
+    // Atividade da cadeia de Markov
+    float activityScore = activityComponent->getUserActivityProbability(req);
     
-    return (userScore + actionScore) / 2.0;
+    // Score final = Confiança × Atividade
+    return trustScore * activityScore;
 }
 ```
+
+### 3. Métricas Individuais
 
 #### Trust Score
 ```cpp
@@ -197,30 +203,13 @@ float calculateActivityScore(Request *req) {
 }
 ```
 
-#### Context Score
-```cpp
-float calculateContextScore(Request *req) {
-    // Combina fatores de contexto
-    float accessWay = req->context->accessWay->weight / 100.0;
-    float localization = req->context->localization->weight / 100.0;
-    float time = req->context->time->weight / 100.0;
-    float group = req->context->group->weight / 100.0;
-    
-    return (accessWay + localization + time + group) / 4.0;
-}
-```
-
 ## Exemplos de Uso
 
 ### 1. Configuração Básica
 
 ```cpp
 // Criar componente de conflito
-ConflictComponent *conflictComponent = new ConflictComponent(config, audit);
-
-// Configurar interferências
-conflictComponent->addDeviceInterference(1, 2, 1.0);  // AC + Aquecedor
-conflictComponent->addDeviceInterference(3, 4, 0.8);  // TV + Som
+ConflictComponent *conflictComponent = new ConflictComponent(config, ontology, context, activity, audit);
 
 // Configurar prioridades
 conflictComponent->setUserPriority(1, 100);  // Admin
@@ -261,43 +250,34 @@ for (auto& pair : conflictComponent->deviceInUse) {
 
 ## Cenários de Teste
 
-### 1. Conflito Concorrente Simples
+### 1. Conflito Hierárquico (Admin vs Adulto)
 
 ```cpp
-// Usuário 1 tenta ligar TV
-Request *req1 = new Request(1, tv, user1, context1, control, 0, time1);
+// Usuário Admin (level=100) tenta ligar TV (t=0s)
+Request *req1 = new Request(1, tv, admin, context1, control, 0, time1);
+// Requisição autorizada, timestamp registrado
 
-// Usuário 2 tenta desligar TV (simultaneamente)
-Request *req2 = new Request(2, tv, user2, context2, control, 0, time2);
-
-// Apenas um será autorizado baseado na prioridade
+// Usuário Adulto (level=80) tenta desligar TV (t=5s) - dentro do timeout
+Request *req2 = new Request(2, tv, adult, context2, control, 0, time2);
+// Conflito detectado! Admin ganha automaticamente por hierarquia
 ```
 
-### 2. Conflito Paralelo Complexo
+### 2. Conflito por Score (Adulto vs Adulto)
 
 ```cpp
-// Usuário 1 liga ar condicionado
-Request *req1 = new Request(1, ac, user1, context1, control, 0, time1);
+// Adulto A (level=80) tenta ligar TV (t=0s)
+Request *req1 = new Request(1, tv, adultA, context1, control, 0, time1);
+// Autorizado, timestamp registrado
 
-// Usuário 2 tenta ligar aquecedor (interferência total)
-Request *req2 = new Request(2, heater, user2, context2, control, 0, time2);
+// Adulto B (level=80) tenta desligar TV (t=3s)
+Request *req2 = new Request(2, tv, adultB, context2, control, 0, time2);
+// Conflito detectado! Mesmo user-level - usa score (Confiança × Atividade)
 
-// Sistema detecta interferência e resolve baseado na prioridade
-```
+// Adulto C (level=80) tenta mudar canal (t=12s)
+Request *req3 = new Request(3, tv, adultC, context3, control, 0, time3);
+// Sem conflito (timeout expirado), autorizado
 
-### 3. Conflito com Múltiplos Dispositivos
-
-```cpp
-// Usuário 1 liga TV
-Request *req1 = new Request(1, tv, user1, context1, control, 0, time1);
-
-// Usuário 2 liga sistema de som (interfere com TV)
-Request *req2 = new Request(2, sound, user2, context2, control, 0, time2);
-
-// Usuário 3 liga micro-ondas (interfere com som)
-Request *req3 = new Request(3, microwave, user3, context3, control, 0, time3);
-
-// Sistema resolve conflitos em cadeia
+// Sistema resolve conflito entre Adulto A e B usando score simplificado
 ```
 
 ## Logs e Auditoria
@@ -305,6 +285,11 @@ Request *req3 = new Request(3, microwave, user3, context3, control, 0, time3);
 O módulo gera logs detalhados para auditoria:
 
 ```
+=== SIMPLIFIED CONFLICT RESOLUTION ===
+User 1 has level: 100
+User 2 has level: 80
+Winner by user-level hierarchy: User 1 (level 100)
+
 CONFLICT LOG: Conflict[1,CONCURRENT,2 requests,2024-01-01 10:00:00]
   - Request 1 (User 1, Device 1, Action CONTROL)
   - Request 2 (User 2, Device 1, Action CONTROL)
@@ -314,26 +299,33 @@ CONFLICT RESOLUTION: Conflict 1 resolved. Winner: Request 1 (User 1)
 
 ## Configurações Recomendadas
 
-### Para Casas Pequenas (1-3 usuários)
-- `conflictTimeout = 15` segundos
-- `maxConcurrentRequests = 3`
-- Interferências simples entre dispositivos básicos
+### Timeouts Recomendados por Tipo de Dispositivo
 
-### Para Casas Médias (3-5 usuários)
-- `conflictTimeout = 30` segundos
-- `maxConcurrentRequests = 5`
-- Interferências moderadas entre dispositivos
+**Dispositivos Rápidos:**
+- Luz: `5-10s`
+- Cortina: `5-10s`
+- Tomada: `5-10s`
 
-### Para Casas Grandes (5+ usuários)
-- `conflictTimeout = 60` segundos
-- `maxConcurrentRequests = 10`
-- Interferências complexas entre múltiplos dispositivos
+**Dispositivos Moderados:**
+- TV: `10-30s`
+- Som: `10-30s`
+- Ventilador: `30-60s`
+
+**Dispositivos Lentos:**
+- Ar Condicionado: `300-600s` (5-10 minutos)
+- Aquecedor: `300-600s` (5-10 minutos)
+- Geladeira: `600-1200s` (10-20 minutos)
+
+**Dispositivos Críticos:**
+- Segurança: `60-300s` (1-5 minutos)
+- Portas/Fechaduras: `60-180s` (1-3 minutos)
+- Câmeras: `120-300s` (2-5 minutos)
 
 ## Troubleshooting
 
 ### Problemas Comuns
 
-1. **Conflitos não detectados**: Verificar se as interferências estão configuradas corretamente
+1. **Conflitos não detectados**: Verificar se `deviceInUse` está sendo atualizado corretamente
 2. **Resolução incorreta**: Verificar prioridades dos usuários
 3. **Timeout de conflitos**: Ajustar `conflictTimeout` conforme necessário
 4. **Dispositivos não liberados**: Verificar se `releaseDevice()` está sendo chamado
@@ -353,16 +345,13 @@ conflictComponent->showDeviceUsage();
 
 Para contribuir com o módulo:
 
-1. Adicione novos tipos de conflitos se necessário
-2. Implemente algoritmos de resolução mais sofisticados
-3. Adicione métricas de performance
-4. Melhore a configuração de interferências
-5. Adicione testes unitários
+1. Implemente algoritmos de resolução mais sofisticados
+2. Adicione métricas de performance
+3. Melhore a sincronização de `deviceInUse` com estado real dos dispositivos
+4. Adicione testes unitários
 
 ## Referências
 
 - Documentação do ZASH principal
 - Algoritmos de resolução de conflitos
 - Sistemas de priorização de usuários
-- Modelos de interferência entre dispositivos
-
