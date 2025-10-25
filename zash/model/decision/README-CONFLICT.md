@@ -75,6 +75,62 @@ Usuário C: Liga AC (t=700s) → Sem conflito (700s > 600s timeout)
 1. **Hierarquia**: User-level mais alto ganha automaticamente
 2. **Score**: Para mesmo user-level, usa Confiança × Atividade
 
+### Cadeias de Markov por Usuário com Fallback
+
+O sistema utiliza **cadeias de Markov individuais** para cada usuário, permitindo modelagem personalizada de comportamento. Para garantir funcionamento adequado com usuários novos, implementamos um **sistema de fallback**:
+
+**Lógica:**
+1. **Cadeia Individual**: Cada usuário possui sua própria cadeia de Markov
+2. **Fallback Global**: Se cadeia do usuário está vazia, usa cadeia global da casa
+3. **Construção Contínua**: Cadeias individuais são construídas a cada requisição
+
+**Cenários:**
+
+**Usuário Existente (cadeia populada):**
+```
+Usuário A: 30 dias de histórico
+├─ ActivityComponent.verifyActivity()
+│  └─ Usa cadeia pessoal de A (prob baseada em seu comportamento)
+└─ ConflictComponent.calculateActivityScore()
+   └─ Usa cadeia pessoal de A (prob baseada em seu comportamento)
+```
+
+**Usuário Novo (cadeia vazia):**
+```
+Usuário B: Primeiro dia no sistema
+├─ ActivityComponent.verifyActivity()
+│  ├─ Cadeia de B está vazia
+│  └─ Fallback: usa cadeia global da casa (prob baseada no padrão geral)
+└─ ConflictComponent.calculateActivityScore()
+   ├─ Cadeia de B está vazia
+   └─ Fallback: usa cadeia global da casa (prob baseada no padrão geral)
+```
+
+**Usuário em Transição (cadeia parcial):**
+```
+Usuário C: 5 dias de histórico
+├─ Transição já vista por C → usa cadeia pessoal
+└─ Transição nunca vista por C → fallback para cadeia global
+```
+
+**Vantagens:**
+- **Usuários novos** não são penalizados por falta de histórico
+- **Modelagem gradual** de comportamento individual
+- **Padrão da casa** serve como baseline para todos
+- **Não requer** período de construção individual
+
+**Implementação:**
+```cpp
+// Em verifyActivity e getUserActivityProbability
+MarkovChain *userMarkov = getUserMarkovChain(req->user->id);
+float prob = userMarkov->getProbability(currentState, lastState);
+
+// Se cadeia do usuário está vazia, usar cadeia global
+if (prob == 0.0 && userMarkov->transitionMatrix.empty()) {
+    prob = markovChain->getProbability(currentState, lastState);
+}
+```
+
 ## Configuração
 
 ### 1. Prioridades dos Usuários

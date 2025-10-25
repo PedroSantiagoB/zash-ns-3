@@ -457,9 +457,9 @@ buildServerStructure (AuditComponent *auditModule, enums::Properties *props, str
   ContextComponent *contextComponent = new ContextComponent (configurationComponent, auditModule);
   ActivityComponent *activityComponent =
       new ActivityComponent (dataComponent, configurationComponent, auditModule);
-  AuthorizationComponent *authorizationComponent =
-      new AuthorizationComponent (configurationComponent, ontologyComponent, contextComponent,
-                                  activityComponent, notificationComponent, auditModule);
+      AuthorizationComponent *authorizationComponent = new AuthorizationComponent(
+        configurationComponent, ontologyComponent, contextComponent,
+        activityComponent, nullptr, notificationComponent, auditModule);
 
   DeviceComponent *deviceComponent =
       new DeviceComponent (authorizationComponent, dataComponent, auditModule);

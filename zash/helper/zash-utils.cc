@@ -142,7 +142,7 @@ void createFile(string fileName, string simDate, string content) {
   fileSimRec << "**** ZASH file ****" << endl << endl;
   fileSimRec << "Date: " << simDate << endl << endl;
 
-  fileSimRec << content.c_str();
+  fileSimRec << content << endl;
 
   // Close scenario simulation configuration file
   fileSimRec << "**** End of ZASH file ****" << endl;

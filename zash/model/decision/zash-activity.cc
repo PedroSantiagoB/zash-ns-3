@@ -2,7 +2,7 @@
 
 namespace ns3 {
 
-ActivityComponent::ActivityComponent ()
+ActivityComponent::ActivityComponent () 
 {
 }
 ActivityComponent::ActivityComponent (DataComponent *d, ConfigurationComponent *c,
@@ -24,21 +24,31 @@ ActivityComponent::verifyActivity (Request *req, function<bool (Request *)> expl
   //   {
   //     resetMarkov (currentDate);
   //   }
-  checkBuilding (req->currentDate);
+  checkBuilding(req->currentDate);
   *auditComponent->zashOutput << "Verify activities" << endl;
   *auditComponent->zashOutput << "From: " << vecToStr (lastState) << endl;
   *auditComponent->zashOutput << "To: " << vecToStr (currentState) << endl;
-  if (!isMarkovBuilding)
+  if (!isMarkovBuilding) 
   {
-    float prob = markovChain->getProbability (currentState, lastState);
+    // uses user markov chain, with fallback to global chain
+    MarkovChain *userMarkov = getUserMarkovChain(req->user->id);
+    float prob = userMarkov->getProbability(currentState, lastState);
 
-    // Armazenar valor calculado para reutilização no ConflictComponent
-    req->calculatedActivity = prob;
+    if (prob == 0.0 && userMarkov->transitionMatrix.empty()) {
+      *auditComponent->zashOutput
+          << "User " << req->user->id
+          << " chain is empty - using global chain as fallback" << endl;
+      prob = markovChain->getProbability(currentState, lastState);
+    } else {
+      *auditComponent->zashOutput << "Using User " << req->user->id
+                                  << " personal chain" << endl;
+    }
+
+        req->calculatedActivity = prob;
 
     *auditComponent->zashOutput << "Probability = " << prob << endl;
-    if (prob < configurationComponent->markovThreshold)
-    {
-      auditComponent->activityFail.push_back (new AuditEvent (req));
+    if (prob < configurationComponent->markovThreshold) {
+      auditComponent->activityFail.push_back(new AuditEvent(req));
       *auditComponent->zashOutput
           << "Activity is NOT valid! Requires proof of identity!" << endl;
       if (!explicitAuthentication (req))
@@ -47,15 +57,15 @@ ActivityComponent::verifyActivity (Request *req, function<bool (Request *)> expl
       }
     }
     *auditComponent->zashOutput << "Activity is valid!" << endl;
-    }
-  else
+  }
+   else
     {
     *auditComponent->zashOutput << "Markov Chain is still building" << endl;
-    // Durante construção, armazenar valor padrão
     req->calculatedActivity = 1.0;
   }
   ++req->validated;
   markovChain->buildTransition (currentState, lastState);
+  buildUserTransition(req);
   return true;
 }
 
@@ -104,8 +114,15 @@ float ActivityComponent::getUserActivityProbability(Request *req) {
   vector<int> lastState = dataComponent->lastState;
   vector<int> currentState = dataComponent->currentState;
 
-  MarkovChain* userMarkov = getUserMarkovChain(req->user->id);
-  return userMarkov->getProbability(currentState, lastState);
+  MarkovChain *userMarkov = getUserMarkovChain(req->user->id);
+  float prob = userMarkov->getProbability(currentState, lastState);
+
+  // fallback
+  if (prob == 0.0 && userMarkov->transitionMatrix.empty()) {
+    return markovChain->getProbability(currentState, lastState);
+  }
+
+  return prob;
 }
 
 void ActivityComponent::buildUserTransition(Request *req) {
