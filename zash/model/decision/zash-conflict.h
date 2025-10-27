@@ -29,6 +29,7 @@ public:
   time_t timestamp;
   bool resolved;
   Request *winner;
+  double detectionTime;
 
   Conflict(int i, ConflictType t, vector<Request *> reqs, time_t ts);
 
@@ -81,11 +82,11 @@ public:
   map<int, Request *> deviceInUse;
   map<int, time_t> deviceRequestTimestamp;
   map<int, Request *>
-      deviceLastRequest; // Armazena a última requisição para cada dispositivo
+      deviceLastRequest;
 
   map<int, UserPriority *> userPriorities;
 
-  int conflictTimeout; // Timeout geral para resolução de conflitos
+  int conflictTimeout;
 
   ConflictComponent();
   ConflictComponent(ConfigurationComponent *c, OntologyComponent *o,

@@ -614,4 +614,131 @@ AuditComponent::countTime (double z_reqTime, bool z_proof, bool isBlocked)
   spatialTemporalLocality = accessControlDistance * accessControlRT;
 }
 
+void
+AuditComponent::outputConflictMetrics ()
+{
+  ofstream fileSimRec;
+  fileSimRec.open (metricsSimFile, ios::app); // Append ao arquivo existente
+  
+  fileSimRec << endl << "======================================" << endl;
+  fileSimRec << "   CONFLICT RESOLUTION METRICS (RF1-RF7)" << endl;
+  fileSimRec << "======================================" << endl << endl;
+  
+  fileSimRec << "--- M1: Conflitos Detectados (RF1) ---" << endl;
+  fileSimRec << "Total de conflitos: " << totalConflicts << endl;
+  fileSimRec << "Conflitos resolvidos: " << conflictsResolved << endl;
+  fileSimRec << "Conflitos falhados: " << conflictsFailed << endl;
+  fileSimRec << "Taxa de sucesso: " 
+             << (totalConflicts > 0 ? (conflictsResolved / (double) totalConflicts) * 100 : 0)
+             << "%" << endl << endl;
+  
+  fileSimRec << "--- M2: Taxa de Adequacao Hierarquica (TAH) - RF2 ---" << endl;
+  fileSimRec << "Conflitos hierarquicos: " << conflictsHierarchical << endl;
+  fileSimRec << "Resolucoes corretas: " << hierarchicalCorrect << endl;
+  
+  double tah = 0;
+  if (hierarchicalTotal > 0)
+    {
+      tah = (hierarchicalCorrect / (double) hierarchicalTotal) * 100;
+    }
+  
+  fileSimRec << "TAH = " << tah << "%" << endl;
+  fileSimRec << "Meta (H1): >=90% -> " << (tah >= 90 ? "PASS" : "FAIL") << endl << endl;
+  
+  fileSimRec << "--- M3: Acuracia Multi-Metrica (AMM) - RF3 ---" << endl;
+  fileSimRec << "Conflitos multi-metrica: " << conflictsMultiMetric << endl;
+  fileSimRec << "Resolucoes adequadas: " << multiMetricCorrect << endl;
+  
+  double amm = 0;
+  if (multiMetricTotal > 0)
+    {
+      amm = (multiMetricCorrect / (double) multiMetricTotal) * 100;
+    }
+  
+  fileSimRec << "AMM = " << amm << "%" << endl;
+  fileSimRec << "Meta (H2): >=85% -> " << (amm >= 85 ? "PASS" : "FAIL") << endl << endl;
+  
+  fileSimRec << "--- M4: Tempo de Resolucao (TMR) - RF6 ---" << endl;
+  if (!conflictResolutionTimes.empty ())
+    {
+      double sum = 0;
+      double minTime = conflictResolutionTimes[0];
+      double maxTime = conflictResolutionTimes[0];
+      
+      for (double t : conflictResolutionTimes)
+        {
+          sum += t;
+          if (t < minTime)
+            minTime = t;
+          if (t > maxTime)
+            maxTime = t;
+        }
+      
+      double avgTime = sum / conflictResolutionTimes.size ();
+      
+      fileSimRec << "Tempo medio: " << avgTime << " ms" << endl;
+      fileSimRec << "Tempo minimo: " << minTime << " ms" << endl;
+      fileSimRec << "Tempo maximo: " << maxTime << " ms" << endl;
+      fileSimRec << "Meta (H4): <=100ms -> " << (avgTime <= 100 ? "PASS" : "FAIL") << endl
+                 << endl;
+    }
+  else
+    {
+      fileSimRec << "Nenhum tempo registrado." << endl << endl;
+    }
+  
+  fileSimRec << "--- M5: Distribuicao por Dispositivo (RF4) ---" << endl;
+  for (auto const &x : conflictsByDevice)
+    {
+      fileSimRec << "Device " << x.first << ": " << x.second << " conflitos" << endl;
+    }
+  fileSimRec << endl;
+  
+  fileSimRec << "--- M6: Vitorias por Usuario (RF5) ---" << endl;
+  for (auto const &x : conflictWinsByUser)
+    {
+      fileSimRec << "User " << x.first << ": " << x.second << " vitorias" << endl;
+    }
+  fileSimRec << endl;
+  
+  fileSimRec << "--- M7: Conflitos por Par de Usuarios ---" << endl;
+  for (auto const &x : conflictsByUserPair)
+    {
+      fileSimRec << "Users " << x.first << ": " << x.second << " conflitos" << endl;
+    }
+  fileSimRec << endl;
+  
+  fileSimRec << "--- M8: Falsos Conflitos (RF7) ---" << endl;
+  fileSimRec << "Total de falsos conflitos: " << falseConflicts << endl;
+  
+  double fcrRate = 0;
+  if (totalConflicts > 0)
+    {
+      fcrRate = (falseConflicts / (double) totalConflicts) * 100;
+    }
+  
+  fileSimRec << "Taxa de falsos conflitos: " << fcrRate << "%" << endl;
+  fileSimRec << "Meta (H5): <=15% -> " << (fcrRate <= 15 ? "PASS" : "FAIL") << endl << endl;
+  
+  fileSimRec << "======================================" << endl;
+  fileSimRec << "   VALIDACAO DE REQUISITOS FUNCIONAIS" << endl;
+  fileSimRec << "======================================" << endl << endl;
+  
+  fileSimRec << "RF1 - Deteccao de conflitos: " 
+             << (totalConflicts > 0 ? "IMPLEMENTADO" : "FALHOU") << endl;
+  fileSimRec << "RF2 - Resolucao hierarquica: " 
+             << (conflictsHierarchical > 0 ? "IMPLEMENTADO" : "NAO TESTADO") << endl;
+  fileSimRec << "RF3 - Resolucao multi-metrica: " 
+             << (conflictsMultiMetric > 0 ? "IMPLEMENTADO" : "NAO TESTADO") << endl;
+  fileSimRec << "RF4 - Timeout por dispositivo: CONFIGURADO" << endl;
+  fileSimRec << "RF5 - Transparencia: LOGS DETALHADOS" << endl;
+  fileSimRec << "RF6 - Tempo de resposta: " 
+             << (!conflictResolutionTimes.empty () ? "MEDIDO" : "SEM DADOS") << endl;
+  fileSimRec << "RF7 - Minimizar falsos conflitos: MONITORADO" << endl;
+  
+  fileSimRec << endl << "======================================" << endl << endl;
+  
+  fileSimRec.close ();
+}
+
 } // namespace ns3

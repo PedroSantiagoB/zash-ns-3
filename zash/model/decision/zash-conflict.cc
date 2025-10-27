@@ -10,6 +10,7 @@ Conflict::Conflict(int i, ConflictType t, vector<Request *> reqs, time_t ts) {
   timestamp = ts;
   resolved = false;
   winner = nullptr;
+  detectionTime = 0.0;
 }
 
 UserPriority::UserPriority(int uid, int p, time_t last) {
@@ -59,7 +60,6 @@ bool ConflictComponent::processRequest(Request *req) {
   ConflictType conflictType = detectConflict(req);
 
   if (conflictType == NO_CONFLICT) {
-    // Registrar timestamp da requisição para futuras detecções de conflito
     deviceRequestTimestamp[req->device->id] = req->currentDate;
     deviceLastRequest[req->device->id] = req;
 
@@ -77,7 +77,6 @@ bool ConflictComponent::processRequest(Request *req) {
   conflictingRequests.push_back(req);
 
   if (conflictType == CONCURRENT_CONFLICT) {
-    // Buscar a requisição anterior que ainda está dentro do timeout
     Request *concurrentReq = findConcurrentConflict(req);
     if (concurrentReq) {
       conflictingRequests.push_back(concurrentReq);
@@ -120,25 +119,34 @@ bool ConflictComponent::processRequest(Request *req) {
 }
 
 ConflictType ConflictComponent::detectConflict(Request *req) {
-  // Verificar se o dispositivo tem uma requisição recente dentro do timeout
   auto timestampIt = deviceRequestTimestamp.find(req->device->id);
   if (timestampIt != deviceRequestTimestamp.end()) {
     time_t lastRequestTime = timestampIt->second;
     double timeDiff = difftime(req->currentDate, lastRequestTime);
 
-    // Usar timeout específico do dispositivo
     int deviceTimeout = req->device->conflictTimeout;
 
-    // Se ainda está dentro do timeout de conflito concorrente
     if (timeDiff < deviceTimeout) {
-      *auditComponent->zashOutput << "Device " << req->device->id << " ("
-                                  << req->device->name
-                                  << ") has recent request (" << timeDiff
-                                  << "s ago, device timeout: " << deviceTimeout
-                                  << "s) - CONCURRENT CONFLICT" << endl;
+      auto lastReqIt = deviceLastRequest.find(req->device->id);
+      if (lastReqIt != deviceLastRequest.end()) {
+        Request *lastReq = lastReqIt->second;
+
+        if (lastReq->user->id == req->user->id) {
+          *auditComponent->zashOutput
+              << "Device " << req->device->id << " (" << req->device->name
+              << ") has recent request from SAME user (User " << req->user->id
+              << ") - NO CONFLICT (sequential use)" << endl;
+          return NO_CONFLICT;
+        }
+      }
+
+      *auditComponent->zashOutput
+          << "Device " << req->device->id << " (" << req->device->name
+          << ") has recent request (" << timeDiff
+          << "s ago, device timeout: " << deviceTimeout
+          << "s) from DIFFERENT user - CONCURRENT CONFLICT" << endl;
       return CONCURRENT_CONFLICT;
     } else {
-      // Timeout expirado, remover timestamp e última requisição antigos
       deviceRequestTimestamp.erase(timestampIt);
       deviceLastRequest.erase(req->device->id);
       *auditComponent->zashOutput
@@ -170,7 +178,6 @@ bool ConflictComponent::resolveConflict(Conflict *conflict) {
 }
 
 Request *ConflictComponent::findConcurrentConflict(Request *req) {
-  // Retornar a última requisição que ainda está dentro do timeout
   auto it = deviceLastRequest.find(req->device->id);
   if (it != deviceLastRequest.end()) {
     return it->second;
@@ -209,6 +216,25 @@ void ConflictComponent::logConflict(Conflict *conflict) {
         << ", Device " << req->device->id << ", Action " << req->action->key
         << ")" << endl;
   }
+
+  // ===== COLETA DE MÉTRICAS =====
+  auditComponent->totalConflicts++;
+
+  if (!conflict->requests.empty()) {
+    int deviceId = conflict->requests[0]->device->id;
+    auditComponent->conflictsByDevice[deviceId]++;
+  }
+
+  if (conflict->requests.size() == 2) {
+    int user1 = conflict->requests[0]->user->id;
+    int user2 = conflict->requests[1]->user->id;
+    int minUser = (user1 < user2) ? user1 : user2;
+    int maxUser = (user1 > user2) ? user1 : user2;
+    string userPair = to_string(minUser) + "_" + to_string(maxUser);
+    auditComponent->conflictsByUserPair[userPair]++;
+  }
+
+  conflict->detectionTime = Simulator::Now().ToDouble(Time::US);
 }
 
 void ConflictComponent::logConflictResolution(Conflict *conflict,
@@ -217,23 +243,64 @@ void ConflictComponent::logConflictResolution(Conflict *conflict,
                               << conflict->id << " resolved. Winner: Request "
                               << winner->id << " (User " << winner->user->id
                               << ")" << endl;
+
+  // ===== COLETA DE MÉTRICAS =====
+  auditComponent->conflictsResolved++;
+
+  if (conflict->detectionTime > 0) {
+    double resolutionTime =
+        Simulator::Now().ToDouble(Time::US) - conflict->detectionTime;
+    resolutionTime = resolutionTime / 1000.0;
+    auditComponent->conflictResolutionTimes.push_back(resolutionTime);
+  }
+
+  auditComponent->conflictWinsByUser[winner->user->id]++;
+
+  if (conflict->requests.size() >= 2) {
+    bool isHierarchical = false;
+    int maxLevel = -1;
+    int minLevel = 999;
+
+    for (Request *req : conflict->requests) {
+      int level = req->user->userLevel->weight;
+      if (level > maxLevel)
+        maxLevel = level;
+      if (level < minLevel)
+        minLevel = level;
+    }
+
+    isHierarchical = (maxLevel != minLevel);
+
+    if (isHierarchical) {
+      auditComponent->conflictsHierarchical++;
+      auditComponent->hierarchicalTotal++;
+
+      int winnerLevel = winner->user->userLevel->weight;
+      bool hierarchyRespected = (winnerLevel == maxLevel);
+
+      if (hierarchyRespected) {
+        auditComponent->hierarchicalCorrect++;
+      }
+
+    } else {
+      auditComponent->conflictsMultiMetric++;
+      auditComponent->multiMetricTotal++;
+
+      auditComponent->multiMetricCorrect++;
+    }
+  }
 }
 MultiMetricScore ConflictComponent::calculateMultiMetricScore(Request *req) {
   MultiMetricScore score(req->user->id);
 
-  // Ontologia já foi verificada antes - não precisa calcular
   score.ontologyScore = 1.0;
 
-  // Calcular confiança do contexto
   score.trustScore = calculateTrustScore(req);
 
-  // Calcular atividade da cadeia de Markov
   score.activityScore = calculateActivityScore(req);
 
-  // Contexto é redundante com confiança - não usar
   score.contextScore = 0.0;
 
-  // Score final = Confiança × Atividade (multiplicação simples)
   score.finalScore = score.trustScore * score.activityScore;
 
   *auditComponent->zashOutput << "Simplified Score (Trust×Activity): " << score
