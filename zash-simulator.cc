@@ -269,6 +269,46 @@ buildEnums (AuditComponent *auditModule, string mode)
   return propsObj;
 }
 
+void
+configureDeviceTimeouts (vector<Device *> devices, AuditComponent *auditModule)
+{
+  
+  auditModule->fileSim << endl << "=== Device Conflict Timeouts ===" << endl;
+  
+  for (Device *device : devices)
+    {
+      if (device->name.find ("Light") != string::npos ||
+          device->name.find ("Lamp") != string::npos)
+        {
+          device->conflictTimeout = 5;
+        }
+      else if (device->name == "TV" || device->name == "Oven" || device->name == "Fridge")
+        {
+          device->conflictTimeout = 30;
+        }
+      // critical devices
+      else if (device->name.find ("Lock") != string::npos)
+        {
+          device->conflictTimeout = 60;
+        }
+      else if (device->name.find ("Door") != string::npos ||
+               device->name.find ("Carpet") != string::npos ||
+               device->name == "Office")
+        {
+          device->conflictTimeout = 2;
+        }
+      else
+        {
+          device->conflictTimeout = 10;
+        }
+      
+      auditModule->fileSim << device->name << " (ID " << device->id << "): "
+                           << device->conflictTimeout << "s" << endl;
+    }
+  
+  auditModule->fileSim << endl;
+}
+
 DeviceComponent *
 buildServerStructure (AuditComponent *auditModule, enums::Properties *props, string mode,
                       int usersNumber)
@@ -368,6 +408,8 @@ buildServerStructure (AuditComponent *auditModule, enums::Properties *props, str
 
   auditModule->privacyRisk = auditModule->adminNumber * auditModule->criticalNumber;
 
+  configureDeviceTimeouts (devices, auditModule);
+
   vector<enums::Enum *> visitorCriticalCap = {};
   Ontology *visitorCritical = new Ontology (props->UserLevel.at ("VISITOR"),
                                             props->DeviceClass.at ("CRITICAL"), visitorCriticalCap);
@@ -457,9 +499,13 @@ buildServerStructure (AuditComponent *auditModule, enums::Properties *props, str
   ContextComponent *contextComponent = new ContextComponent (configurationComponent, auditModule);
   ActivityComponent *activityComponent =
       new ActivityComponent (dataComponent, configurationComponent, auditModule);
-  AuthorizationComponent *authorizationComponent =
-      new AuthorizationComponent (configurationComponent, ontologyComponent, contextComponent,
-                                  activityComponent, notificationComponent, auditModule);
+  
+  ConflictComponent *conflictComponent = new ConflictComponent (
+      configurationComponent, ontologyComponent, contextComponent, activityComponent, auditModule);
+  
+  AuthorizationComponent *authorizationComponent = new AuthorizationComponent(
+        configurationComponent, ontologyComponent, contextComponent,
+        activityComponent, conflictComponent, notificationComponent, auditModule);
 
   DeviceComponent *deviceComponent =
       new DeviceComponent (authorizationComponent, dataComponent, auditModule);
@@ -595,6 +641,7 @@ scheduleMessages (NodeContainer staNodes, vector<Device *> devices, vector<User 
   uniform_int_distribution<mt19937::result_type> distD (0, NUMBER_OF_DEVICES - 1);
   uniform_int_distribution<mt19937::result_type> distG (0, props->groups.size () - 1);
   uniform_int_distribution<mt19937::result_type> distV (0, 100);
+  uniform_int_distribution<mt19937::result_type> distU (0, users.size () - 1);
   auditModule->fileSim << "Random seed is: " << seed << endl;
 
   vector<string> datesList = {};
@@ -616,13 +663,13 @@ scheduleMessages (NodeContainer staNodes, vector<Device *> devices, vector<User 
 
   // cout << "aqui3" << endl;
 
-  int user = 0;
+  // int user = 0;  
   string accessWay;
   string localization = "INTERNAL";
   string group;
   string action = "CONTROL";
   auditModule->fileSim << endl << "Devices interaction have the following properties: " << endl;
-  auditModule->fileSim << "User: " << user << endl;
+  auditModule->fileSim << "User: Random from {0, 1, 2, 3, 4} (distributed)" << endl;
   auditModule->fileSim << "Access Way: Random from " << vecToStr (props->accessWays) << endl;
   auditModule->fileSim << "Localization: " << localization << endl;
   auditModule->fileSim << "Group: Random from " << vecToStr (props->groups) << endl;
@@ -719,6 +766,8 @@ scheduleMessages (NodeContainer staNodes, vector<Device *> devices, vector<User 
               accessWay = props->accessWays[distAW (gen)];
               group = props->groups[distG (gen)];
 
+              int user = distU (gen);
+
               scheduleMessage (&idReq, timeOfAlteration, actStr, alteration->device, user,
                                accessWay, localization, group, "MANAGE", dayCount, startDay,
                                auditModule, props, staNodes, &msgCount,
@@ -771,6 +820,8 @@ scheduleMessages (NodeContainer staNodes, vector<Device *> devices, vector<User 
               change = distD (gen);
             }
 
+          int user = distU (gen);
+
           scheduleMessage (&idReq, currentDate, actStr, change, user, accessWay, localization,
                            group, "VIEW", dayCount, startDay, auditModule, props, staNodes,
                            &msgCount, diff, users, devices, deviceComponent, 0);
@@ -799,6 +850,8 @@ scheduleMessages (NodeContainer staNodes, vector<Device *> devices, vector<User 
 
               accessWay = props->accessWays[distAW (gen)];
               group = props->groups[distG (gen)];
+
+              int user = distU (gen);
 
               scheduleMessage (&idReq, currentDate, actStr, change, user, accessWay, localization,
                                group, action, dayCount, startDay, auditModule, props, staNodes,
@@ -1208,6 +1261,8 @@ main (int argc, char *argv[])
   // flowMonitor->SerializeToXmlFile("flow.xml", true, true);
 
   auditModule->outputMetrics ();
+
+  auditModule->outputConflictMetrics ();
 
   return 0;
 }

@@ -14,6 +14,7 @@ set(source_files
     model/collection/zash-device.cc
     model/decision/zash-activity.cc
     model/decision/zash-authorization.cc
+    model/decision/zash-conflict.cc
     model/decision/zash-context.cc
     model/decision/zash-ontology.cc
 )
@@ -34,6 +35,7 @@ set(header_files
     model/collection/zash-device.h
     model/decision/zash-activity.h
     model/decision/zash-authorization.h
+    model/decision/zash-conflict.h
     model/decision/zash-context.h
     model/decision/zash-ontology.h
 )

@@ -106,6 +106,30 @@ public:
   map<int, int> attDenDev;
   map<int, int> attDenUser;
 
+  // ===== MÉTRICAS DE CONFLITOS CONCORRENTES =====
+  int totalConflicts = 0;
+  int conflictsResolved = 0;
+  int conflictsFailed = 0;
+
+  int conflictsHierarchical = 0;
+  int conflictsMultiMetric = 0;
+
+  int hierarchicalCorrect = 0;
+  int hierarchicalTotal = 0;
+
+  int multiMetricCorrect = 0;
+  int multiMetricTotal = 0;
+
+  vector<double> conflictResolutionTimes;
+
+  map<int, int> conflictsByDevice;
+
+  map<int, int> conflictWinsByUser;
+
+  map<string, int> conflictsByUserPair; // "User1_User2"
+
+  int falseConflicts = 0;
+
   string simDate;
 
   string folderTraces;
@@ -169,6 +193,8 @@ public:
   void printDenProf();
 
   void outputMetrics ();
+
+  void outputConflictMetrics ();
 
   void countTime (double z_reqTime, bool z_proof, bool isBlocked);
 

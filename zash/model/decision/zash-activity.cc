@@ -2,7 +2,7 @@
 
 namespace ns3 {
 
-ActivityComponent::ActivityComponent ()
+ActivityComponent::ActivityComponent () 
 {
 }
 ActivityComponent::ActivityComponent (DataComponent *d, ConfigurationComponent *c,
@@ -24,32 +24,48 @@ ActivityComponent::verifyActivity (Request *req, function<bool (Request *)> expl
   //   {
   //     resetMarkov (currentDate);
   //   }
-  checkBuilding (req->currentDate);
+  checkBuilding(req->currentDate);
   *auditComponent->zashOutput << "Verify activities" << endl;
   *auditComponent->zashOutput << "From: " << vecToStr (lastState) << endl;
   *auditComponent->zashOutput << "To: " << vecToStr (currentState) << endl;
-  if (!isMarkovBuilding)
-    {
-      float prob = markovChain->getProbability (currentState, lastState);
-      *auditComponent->zashOutput << "Probability = " << prob << endl;
-      if (prob < configurationComponent->markovThreshold)
-        {
-          auditComponent->activityFail.push_back (new AuditEvent (req));
-          *auditComponent->zashOutput << "Activity is NOT valid! Requires proof of identity!"
-                                      << endl;
-          if (!explicitAuthentication (req))
-            {
-              return false;
-            }
-        }
-      *auditComponent->zashOutput << "Activity is valid!" << endl;
+  if (!isMarkovBuilding) 
+  {
+    // uses user markov chain, with fallback to global chain
+    MarkovChain *userMarkov = getUserMarkovChain(req->user->id);
+    float prob = userMarkov->getProbability(currentState, lastState);
+
+    if (prob == 0.0 && userMarkov->transitionMatrix.empty()) {
+      *auditComponent->zashOutput
+          << "User " << req->user->id
+          << " chain is empty - using global chain as fallback" << endl;
+      prob = markovChain->getProbability(currentState, lastState);
+    } else {
+      *auditComponent->zashOutput << "Using User " << req->user->id
+                                  << " personal chain" << endl;
     }
-  else
-    {
-      *auditComponent->zashOutput << "Markov Chain is still building" << endl;
+
+        req->calculatedActivity = prob;
+
+    *auditComponent->zashOutput << "Probability = " << prob << endl;
+    if (prob < configurationComponent->markovThreshold) {
+      auditComponent->activityFail.push_back(new AuditEvent(req));
+      *auditComponent->zashOutput
+          << "Activity is NOT valid! Requires proof of identity!" << endl;
+      if (!explicitAuthentication (req))
+      {
+        return false;
+      }
     }
+    *auditComponent->zashOutput << "Activity is valid!" << endl;
+  }
+   else
+    {
+    *auditComponent->zashOutput << "Markov Chain is still building" << endl;
+    req->calculatedActivity = 1.0;
+  }
   ++req->validated;
   markovChain->buildTransition (currentState, lastState);
+  buildUserTransition(req);
   return true;
 }
 
@@ -60,25 +76,61 @@ ActivityComponent::checkBuilding (time_t currentDate)
   if (difftime (limitDate, (time_t) (-1)) == 0)
     {
       limitDate = currentDate + configurationComponent->buildInterval * 24 * 60 * 60; // add days
-      configurationComponent->isBuilding = true;
+    configurationComponent->isBuilding = true;
     }
   else if (isMarkovBuilding && difftime (currentDate, limitDate) > 0)
     {
-      isMarkovBuilding = false;
-      configurationComponent->isBuilding = false;
+    isMarkovBuilding = false;
+    configurationComponent->isBuilding = false;
       *auditComponent->zashOutput << "Markov Chain completed building transition matrix at "
                                   << formatTime (currentDate) << endl;
-    }
+  }
 }
 
 void
 ActivityComponent::resetMarkov (time_t currentDate)
 {
-  *auditComponent->zashOutput << "Markov Chain is reset at " << formatTime (currentDate) << endl;
+  *auditComponent->zashOutput << "Markov Chains are reset at " << formatTime (currentDate) << endl;
   delete markovChain;
   markovChain = new MarkovChain ();
+
+  for (auto& pair : userMarkovChains) {
+    delete pair.second;
+    pair.second = new MarkovChain();
+  }
+
   isMarkovBuilding = true;
   limitDate = currentDate + configurationComponent->buildInterval * 24 * 60 * 60; // add days
+}
+
+MarkovChain* ActivityComponent::getUserMarkovChain(int userId) {
+  if (userMarkovChains.find(userId) == userMarkovChains.end()) {
+    userMarkovChains[userId] = new MarkovChain();
+  }
+  return userMarkovChains[userId];
+}
+
+float ActivityComponent::getUserActivityProbability(Request *req) {
+  vector<int> lastState = dataComponent->lastState;
+  vector<int> currentState = dataComponent->currentState;
+
+  MarkovChain *userMarkov = getUserMarkovChain(req->user->id);
+  float prob = userMarkov->getProbability(currentState, lastState);
+
+  // fallback
+  if (prob == 0.0 && userMarkov->transitionMatrix.empty()) {
+    return markovChain->getProbability(currentState, lastState);
+  }
+
+  return prob;
+}
+
+void ActivityComponent::buildUserTransition(Request *req) {
+  vector<int> lastState = dataComponent->lastState;
+  vector<int> currentState = dataComponent->currentState;
+
+  MarkovChain* userMarkov = getUserMarkovChain(req->user->id);
+  userMarkov->buildTransition(currentState, lastState);
 }
 
 } // namespace ns3

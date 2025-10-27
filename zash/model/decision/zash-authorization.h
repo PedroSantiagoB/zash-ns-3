@@ -14,6 +14,7 @@ using namespace std;
 #include "ns3/zash-activity.h"
 #include "ns3/zash-audit.h"
 #include "ns3/zash-configuration.h"
+#include "ns3/zash-conflict.h"
 #include "ns3/zash-context.h"
 #include "ns3/zash-enums.h"
 #include "ns3/zash-models.h"
@@ -29,11 +30,12 @@ public:
   OntologyComponent *ontologyComponent;
   ContextComponent *contextComponent;
   ActivityComponent *activityComponent;
+  ConflictComponent *conflictComponent;
   NotificationComponent *notificationComponent;
   AuditComponent *auditComponent;
   AuthorizationComponent ();
   AuthorizationComponent (ConfigurationComponent *c, OntologyComponent *o, ContextComponent *ctx,
-                          ActivityComponent *a, NotificationComponent *n, AuditComponent *adt);
+                          ActivityComponent *a, ConflictComponent *conf, NotificationComponent *n, AuditComponent *adt);
 
   void processUnauthorized (Request *req);
 

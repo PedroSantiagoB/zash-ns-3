@@ -53,5 +53,6 @@
         "charconv": "cpp",
         "codecvt": "cpp",
         "iomanip": "cpp"
-    }
+    },
+    "cmake.ignoreCMakeListsMissing": true
 }
